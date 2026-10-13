@@ -26,7 +26,7 @@ Documento vivo. Toda afirmación temporal se respalda con una medición.
 Las mediciones del ESP32-C6 se obtuvieron mediante `k_cycle_get_32()`. Al no disponer de analizador lógico en Lab 3, se usó instrumentación interna, que es intrusiva y no sustituye perfectamente una captura externa.
 
 | Tarea | Requisito | Tipo | Periodo | Deadline | C_i máximo |
-|---|---|---:|---:|---:|---:|---|
+|---|---|---:|---:|---:|---:|
 | Sampling | REQ-SAMP-01 | Hard | 1 ms | 1 ms | 12.937 µs |
 | Control PI | REQ-CTRL-01 | Hard | 10 ms | 10 ms | 34.500 µs |
 | Consola | REQ-CONS-01 | Firm | Esporádica | No definido | 408.623 ms durante `calib` |
