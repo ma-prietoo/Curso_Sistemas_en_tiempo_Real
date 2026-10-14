@@ -1,12 +1,12 @@
-# RET — Reporte de Evidencia Temporal
+# RET — Informe de Evidencia de Tiempos
 
-- **Equipo:** Maria de los Angeles Prieto | Mariana Zuluaga Yepes | Rafael Torres Choperena
+- **Equipo:** María de los Ángeles Prieto · Rafael Torres Choperena · Mariana Zuluaga Yepes
 - **Plataformas:** Nucleo-L476RG y ESP32-C6 Super Mini
 - **MCU final:** ESP32-C6FH4, RISC-V, 160 MHz, 4 MB flash
 - **Sistema operativo:** Zephyr RTOS 4.4.99
 - **Aplicación:** SoilSense Control
 
-Documento vivo. Toda afirmación temporal se respalda con una medición.
+Documento vivo y acumulativo. Toda afirmación temporal se respalda con una medición.
 
 ## 1. Sistema y conjunto de tareas
 
@@ -19,19 +19,21 @@ Documento vivo. Toda afirmación temporal se respalda con una medición.
 | REQ-CONS-01 | Cuando el operador envíe un comando válido, el sistema deberá interpretarlo y responder por consola. |
 | REQ-TELE-01 | Mientras el sistema funcione, deberá emitir telemetría aproximadamente cada segundo. |
 | REQ-FLOW-01 | Cuando llegue un pulso de flujo, deberá registrarlo y procesar cada lote de 100 pulsos. |
+| REQ-HMI-01 | Mientras la HMI esté habilitada, deberá actualizar la pantalla cada 500 ms. |
 | REQ-SAFE-01 | Cuando se detecte sobrepresión o parada de emergencia, deberá llevar la válvula al estado seguro cerrado. |
 
 ### Tareas y tiempos de ejecución
 
 Las mediciones del ESP32-C6 se obtuvieron mediante `k_cycle_get_32()`. Al no disponer de analizador lógico en Lab 3, se usó instrumentación interna, que es intrusiva y no sustituye perfectamente una captura externa.
 
-| Tarea | Requisito | Tipo | Periodo | Deadline | C_i máximo |
-|---|---|---:|---:|---:|---:|
-| Sampling | REQ-SAMP-01 | Hard | 1 ms | 1 ms | 12.937 µs |
-| Control PI | REQ-CTRL-01 | Hard | 10 ms | 10 ms | 34.500 µs |
-| Consola | REQ-CONS-01 | Firm | Esporádica | No definido | 408.623 ms durante `calib` |
-| Telemetría | REQ-TELE-01 | Soft | 1 s | Flexible | 50.442 ms |
-| Flow batch | REQ-FLOW-01 | Soft | Cada 100 pulsos | No definido | No medido en C6 |
+| Tarea | Requisito | Tipo | Periodo | Deadline | C_i máximo | Método |
+|---|---|---:|---:|---:|---:|---|
+| Sampling | REQ-SAMP-01 | Hard | 1 ms | 1 ms | 12.937 µs | Contador de ciclos interno |
+| Control PI | REQ-CTRL-01 | Hard | 10 ms | 10 ms | 34.500 µs | Contador de ciclos interno; puede incluir preempción |
+| Consola | REQ-CONS-01 | Firm | Esporádica | No definido | 408.623 ms durante `calib` | Contador de ciclos |
+| Telemetría | REQ-TELE-01 | Soft | 1 s | Flexible | 50.442 ms | Contador alrededor de `snprintf` y `printk` |
+| Flow batch | REQ-FLOW-01 | Soft | Cada 100 pulsos | No definido | No medido en C6 | No se generaron pulsos |
+| Pantalla OLED | REQ-HMI-01 | Soft | 500 ms | 500 ms | 25.06 ms en Nucleo | Ancho de pulso D8 con Logic 2 |
 
 Valores de Lab 2 en Nucleo-L476RG: sampling 5.0 µs, control 2.5 µs, `help` 1.313 ms, telemetría 6.1555 ms, flow batch 70.5 µs, OLED 25.06 ms y latencia de flujo 12.5 µs.
 
@@ -56,7 +58,37 @@ Evidencia: commits `8f67887` y `c54327c`; detección correcta del ESP32-C6FH4 co
 
 ## 3. Evidencia por semana
 
+### Semana 1 — Preparación y trazabilidad del entorno
+
+Se creó y verificó el repositorio `4101137-real-time-systems`, se instaló el entorno virtual de Zephyr y se confirmó `west` versión 1.5.0. El workspace quedó ubicado en `/home/maria/zephyrproject` y el entorno se activa con `source "$HOME/zephyrproject/.venv/bin/activate"`. Se verificaron compilación, control de versiones y conexión USB de la placa. Esta preparación permitió conservar cada cambio posterior como evidencia reproducible.
+
 ### Semana 2 — Superloop en Nucleo-L476RG
+
+**Instrumento:** Saleae Logic 2.  
+**Señales:** D3 sampling, D4 control, D5 consola, D6 telemetría, D7 lote de flujo, D8 OLED y D9 entrada de flujo.
+
+#### Arquitectura observada
+
+```mermaid
+flowchart TD
+    T["Temporizador cada 1 ms: ISR"] --> P["Incrementa ticks_pending y backlog_peak"]
+    F["Flanco de flujo D9 / PC7: ISR"] --> Q["Incrementa flow_pulses"]
+    P --> L["Superloop: while (1)"]
+    L --> C["Consola D5 / PB4"]
+    C --> H["OLED D8 / PA9"]
+    H --> E["Telemetría D6 / PB10"]
+    E --> D{"¿Hay tick pendiente?"}
+    D -- Sí --> S["Sampling D3 / PB3"]
+    S --> K{"¿Van 10 muestras?"}
+    K -- Sí --> R["Control D4 / PB5 y válvula PA5"]
+    K -- No --> B["Lote de flujo D7 / PA8"]
+    R --> B
+    D -- No --> B
+    Q --> B
+    B --> L
+```
+
+La ISR del temporizador no ejecuta sampling: incrementa `ticks_pending`. El superloop atiende consola, OLED y telemetría antes de revisar ese contador. Cada diez muestras ejecuta control. La ISR de flujo incrementa `flow_pulses` y el lote se procesa en el bucle. Por ello, cualquier tarea lenta retrasa a todas las que aparecen después.
 
 | Medición | Resultado |
 |---|---:|
@@ -71,6 +103,10 @@ Evidencia: commits `8f67887` y `c54327c`; detección correcta del ESP32-C6FH4 co
 | `backlog_peak` durante `calib` | 432 ticks |
 
 El superloop incumplió el deadline de 1 ms cuando una operación blanda o bloqueante ocupó su único flujo de ejecución. Al terminar, procesó ticks atrasados casi consecutivamente, pero recuperar trabajo no equivale a cumplir deadlines.
+
+#### Causa raíz de `calib`
+
+`cmd_calib()` ejecuta `k_busy_wait(400)` dentro de 1000 iteraciones. Como el comando se invoca sincrónicamente desde `console_handle()` dentro del único `while (1)`, el programa permanece aproximadamente 400 ms sin atender `ticks_pending`. El resultado medido fue un periodo máximo de sampling de 432.332 ms, jitter de 431.332 ms y crecimiento de `backlog_peak` de 30 a 432 ticks.
 
 ### Semana 3 — ESP32-C6 y primer thread
 
