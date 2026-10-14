@@ -1,6 +1,6 @@
 # RET — Reporte de Evidencia Temporal
 
-- **Equipo:** Maria
+- **Equipo:** Maria de los Angeles Prieto | Mariana Zuluaga Yepes | Rafael Torres Choperena
 - **Plataformas:** Nucleo-L476RG y ESP32-C6 Super Mini
 - **MCU final:** ESP32-C6FH4, RISC-V, 160 MHz, 4 MB flash
 - **Sistema operativo:** Zephyr RTOS 4.4.99
