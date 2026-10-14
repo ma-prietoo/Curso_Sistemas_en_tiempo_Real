@@ -26,14 +26,14 @@ Documento vivo y acumulativo. Toda afirmación temporal se respalda con una medi
 
 Las mediciones del ESP32-C6 se obtuvieron mediante `k_cycle_get_32()`. Al no disponer de analizador lógico en Lab 3, se usó instrumentación interna, que es intrusiva y no sustituye perfectamente una captura externa.
 
-| Tarea | Requisito | Tipo | Periodo | Deadline | C_i máximo | Método |
-|---|---|---:|---:|---:|---:|---|
-| Sampling | REQ-SAMP-01 | Hard | 1 ms | 1 ms | 12.937 µs | Contador de ciclos interno |
-| Control PI | REQ-CTRL-01 | Hard | 10 ms | 10 ms | 34.500 µs | Contador de ciclos interno; puede incluir preempción |
-| Consola | REQ-CONS-01 | Firm | Esporádica | No definido | 408.623 ms durante `calib` | Contador de ciclos |
-| Telemetría | REQ-TELE-01 | Soft | 1 s | Flexible | 50.442 ms | Contador alrededor de `snprintf` y `printk` |
-| Flow batch | REQ-FLOW-01 | Soft | Cada 100 pulsos | No definido | No medido en C6 | No se generaron pulsos |
-| Pantalla OLED | REQ-HMI-01 | Soft | 500 ms | 500 ms | 25.06 ms en Nucleo | Ancho de pulso D8 con Logic 2 |
+| Tarea | Requisito | Tipo | Periodo | Deadline | C_i máximo |
+|---|---|---:|---:|---:|---:|
+| Sampling | REQ-SAMP-01 | Hard | 1 ms | 1 ms | 12.937 µs |
+| Control PI | REQ-CTRL-01 | Hard | 10 ms | 10 ms | 34.500 µs |
+| Consola | REQ-CONS-01 | Firm | Esporádica | No definido | 408.623 ms durante `calib` |
+| Telemetría | REQ-TELE-01 | Soft | 1 s | Flexible | 50.442 ms |
+| Flow batch | REQ-FLOW-01 | Soft | Cada 100 pulsos | No definido | No medido en C6 |
+| Pantalla OLED | REQ-HMI-01 | Soft | 500 ms | 500 ms | 25.06 ms en Nucleo |
 
 Valores de Lab 2 en Nucleo-L476RG: sampling 5.0 µs, control 2.5 µs, `help` 1.313 ms, telemetría 6.1555 ms, flow batch 70.5 µs, OLED 25.06 ms y latencia de flujo 12.5 µs.
 
