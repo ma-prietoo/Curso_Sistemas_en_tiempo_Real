@@ -1,6 +1,6 @@
 # RET — Informe de Evidencia de Tiempos
 
-**Grupo:** `María Prieto Ortega` · `Rafael Torres Choperena` · `Mariana Zuluaga Yepes`  
+**Grupo:** `María Prieto Ortega` · `Mariana Zuluaga Yepes`  
 **Placas:** `Nucleo-L476RG` · `ESP32-C6 Super Mini`
 
 ## 1. El sistema y su conjunto de tareas
