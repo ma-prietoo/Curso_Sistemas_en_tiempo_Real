@@ -282,6 +282,130 @@ siguientes valores bajo ejecución con telemetría, consola, pantalla y `calib`.
 El hilo más cercano a su límite fue `console_tid`, con 804 de 2048 bytes
 utilizados (39 %). Ninguna pila mostró riesgo de desbordamiento en esta prueba.
 
+### Semana 5 — Trazado del planificador y preempción
+
+#### Plataforma e instrumento utilizado
+
+El laboratorio se ejecutó sobre un **ESP32-C6 Super Mini**, compatible con la configuración `esp32c6_devkitc/esp32c6/hpcore`, usando Zephyr 4.4.99. Debido a que la tarjeta dispone de un único puerto USB Serial/JTAG, el trazado CTF se almacenó en un búfer de RAM de 65 536 bytes y posteriormente se extrajo mediante JTAG/GDB.
+
+La captura utilizada para el análisis contiene **2764 eventos**, **5 hilos visibles** y una ventana temporal de **3136.906 ms**. En ella se identificaron los hilos `sampling_tid`, `console_tid`, `control_tid`, `display_tid` e `idle`, además de las interrupciones del sistema.
+
+#### Resultados de las mediciones
+
+| Medición | Predicción | Valor obtenido | Contraste |
+|---|---:|---:|---|
+| Cambio de contexto observado en la traza | 15 µs | **14 µs** | `ctx_gap_peak_us` sin tracing: **15 µs** |
+| ISR del tick → entrada de `sampling_tid` | 50 µs | **61 µs** | `lat_peak_us` sin tracing: **12 µs** |
+| ISR del tick → inicio instrumentado de muestreo | 50 µs | **73 µs** | Desde `isr_enter` hasta la activación de `instr_samp` |
+| Carga de CPU durante la captura | — | **75 %** | Idle: **23 %** |
+| Carga de `sampling_tid` | — | **56 %** | Calculada por el visor CTF |
+| Carga de `console_tid` | — | **13 %** | Calculada por el visor CTF |
+| Carga de `control_tid` | — | **6 %** | Calculada por el visor CTF |
+| Carga de `display_tid` | — | **0 %** | Permaneció bloqueado durante la ventana |
+| Sobrecarga del tracing sobre el jitter máximo | 10 µs | **36 µs** | Con tracing: **43 µs**; sin tracing: **7 µs** |
+
+Los porcentajes individuales suman aproximadamente 98 % debido al redondeo del visor. El tiempo restante corresponde a interrupciones y tareas internas de duración reducida.
+
+#### Rastro anotado de una preempción completa
+
+La siguiente secuencia fue extraída de la captura CTF alrededor de `t = 408.815 ms`:
+
+| Tiempo | Evento | Interpretación |
+|---:|---|---|
+| 408.815 ms | `isr_enter` | Entra la interrupción periódica del sistema. |
+| 408.827 ms | `thread_sched_ready` → `console_tid` | La consola queda preparada para ejecutarse. |
+| 408.843 ms | `thread_sched_ready` → `sampling_tid` | La ISR libera el trabajo periódico de muestreo. |
+| 408.856 ms | `isr_exit` | Finaliza la interrupción. |
+| 408.866 ms | `thread_switched_out` → `idle` | El procesador abandona el hilo idle. |
+| 408.876 ms | `thread_switched_in` → `sampling_tid` | `sampling_tid` obtiene la CPU y preempta al hilo de menor prioridad. |
+| 408.888 ms | `gpio_port_set_bits_raw_enter` | Se eleva `instr_samp`: comienza el trabajo instrumentado de muestreo. |
+| 408.931 ms | `semaphore_give_enter` | El muestreo libera el semáforo del controlador. |
+| 408.940 ms | `thread_sched_ready` → `control_tid` | `control_tid` queda preparado. |
+| 408.948 ms | `semaphore_give_exit` | Termina la liberación del semáforo. |
+| 408.961 ms | `thread_sched_pend` → `sampling_tid` | El hilo de muestreo termina su activación y se bloquea. |
+| 408.974 ms | `thread_switched_out` → `sampling_tid` | `sampling_tid` abandona la CPU. |
+| 408.988 ms | `thread_switched_in` → `control_tid` | El planificador entrega la CPU al controlador. |
+| 408.996 ms | `semaphore_take_exit` | `control_tid` recibe correctamente el semáforo. |
+| 409.004 ms | `gpio_port_set_bits_raw_enter` | Comienza el trabajo instrumentado de control. |
+| 409.031 ms | `semaphore_take_enter` | El controlador vuelve a esperar el siguiente periodo. |
+| 409.038 ms | `semaphore_take_blocking` | El semáforo no está disponible y el controlador se bloquea. |
+| 409.050 ms | `thread_sched_pend` → `control_tid` | El planificador retira el controlador. |
+| 409.064 ms | `thread_switched_out` → `control_tid` | Finaliza la ejecución del controlador. |
+| 409.077 ms | `thread_switched_in` → `console_tid` | La CPU regresa a la consola. |
+
+La cadena observada fue:
+
+`ISR → sampling_tid preparado → sampling_tid ejecutándose → semáforo liberado → control_tid preparado → sampling_tid bloqueado → control_tid ejecutándose → control_tid bloqueado → console_tid`
+
+Esto constituye una preempción completa observada directamente mediante el trazado del planificador.
+
+#### Décimo tick y activación del controlador
+
+En el tick correspondiente a la activación de control se observó:
+
+| Tiempo | Evento |
+|---:|---|
+| 408.931 ms | `semaphore_give_enter` |
+| 408.940 ms | `control_tid` pasa a estado ready |
+| 408.948 ms | `semaphore_give_exit` |
+| 408.961 ms | `sampling_tid` queda pendiente |
+| 408.988 ms | `control_tid` entra en ejecución |
+
+Por tanto, en el décimo tick, `k_sem_give()` hace que el planificador seleccione a `control_tid` después de que `sampling_tid` termine su activación.
+
+#### Comparación entre trazado y medición temporal
+
+El cambio de contexto se calculó entre la salida de `sampling_tid` a `408.974 ms` y la entrada de `control_tid` a `408.988 ms`:
+
+\[
+C_{ctx}=408.988-408.974=0.014\text{ ms}=14\ \mu s
+\]
+
+La latencia entre la entrada de la ISR y la ejecución de `sampling_tid` fue:
+
+\[
+L_{ISR\rightarrow sampling}=408.876-408.815
+=0.061\text{ ms}=61\ \mu s
+\]
+
+Si se toma como inicio efectivo la elevación de `instr_samp`, la latencia fue:
+
+\[
+L_{ISR\rightarrow instr\_samp}=408.888-408.815
+=0.073\text{ ms}=73\ \mu s
+\]
+
+El valor obtenido por tracing es mayor que `lat_peak_us = 12 µs` medido con el firmware sin trazado. Esto sucede porque el trazado registra eventos del kernel, llamadas GPIO y cambios de estado, introduciendo trabajo adicional. Además, los puntos de medición no representan exactamente el mismo instante: `lat_peak_us` mide la latencia interna definida por el firmware, mientras que CTF permite observar la secuencia completa del planificador.
+
+#### Precio de observar el sistema
+
+| Magnitud | Tracing activado | Tracing desactivado | Incremento |
+|---|---:|---:|---:|
+| `lat_peak_us` | 48 µs | 12 µs | **+36 µs** |
+| `samp_jitter_peak_us` | 43 µs | 7 µs | **+36 µs** |
+| `ctrl_period_peak_us` | 10048 µs | 10005 µs | **+43 µs** |
+| `ctx_gap_peak_us` | 75 µs | 15 µs | **+60 µs** |
+
+La sobrecarga máxima sobre el jitter de muestreo fue:
+
+\[
+\Delta J_{max}=43-7=\boxed{36\ \mu s}
+\]
+
+El tracing incrementó el trabajo ejecutado en cada activación y, por tanto, elevó tanto la latencia como el jitter. Esta diferencia confirma que el trazado permite explicar la historia del planificador, pero también perturba el sistema observado.
+
+#### Alcance del búfer de trazado
+
+El búfer CTF alcanzó aproximadamente `pos = 65331` y `buffer_full = true`, frente a una capacidad configurada de 65 536 bytes. Por esta razón, la captura disponible cubrió aproximadamente **3.14 segundos**.
+
+En esta adaptación al ESP32-C6, la duración no estuvo limitada por una transmisión UART, sino por la capacidad finita del búfer de RAM. Cuando el búfer se llena, los eventos posteriores dejan de almacenarse.
+
+#### Conclusión de la semana 5
+
+El trazado CTF permitió observar directamente la activación de los hilos, los cambios de contexto, las interrupciones y el bloqueo mediante semáforos. Se verificó una preempción completa y se identificó que `k_sem_give()` despierta a `control_tid` en el tick correspondiente.
+
+La comparación con el firmware sin tracing mostró un aumento de **36 µs** en el jitter máximo de muestreo. Por ello, las mediciones temporales deben conservar la identificación del instrumento utilizado: los contadores internos y GPIO sirven para cuantificar tiempos, mientras que CTF permite explicar qué hilo se ejecutó, por qué fue seleccionado y cuándo quedó bloqueado.
+
 ## 4. Análisis de planificabilidad
 
 U = ΣC_i/T_i with **measured** C_i; test used (RM / hyperbolic / EDF); RTA as a
