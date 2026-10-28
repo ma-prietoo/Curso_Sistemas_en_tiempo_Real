@@ -416,12 +416,6 @@ El búfer CTF alcanzó aproximadamente `pos = 65331` y `buffer_full = true`, fre
 
 En esta adaptación al ESP32-C6, la duración no estuvo limitada por una transmisión UART, sino por la capacidad finita del búfer de RAM. Cuando el búfer se llena, los eventos posteriores dejan de almacenarse.
 
-#### Conclusión de la semana 5
-
-El trazado CTF permitió observar directamente la activación de los hilos, los cambios de contexto, las interrupciones y el bloqueo mediante semáforos. Se verificó una preempción completa y se identificó que `k_sem_give()` despierta a `control_tid` en el tick correspondiente.
-
-La comparación con el firmware sin tracing mostró un aumento de **36 µs** en el jitter máximo de muestreo. Por ello, las mediciones temporales deben conservar la identificación del instrumento utilizado: los contadores internos y GPIO sirven para cuantificar tiempos, mientras que CTF permite explicar qué hilo se ejecutó, por qué fue seleccionado y cuándo quedó bloqueado.
-
 ## 4. Análisis de planificabilidad
 
 U = ΣC_i/T_i with **measured** C_i; test used (RM / hyperbolic / EDF); RTA as a
