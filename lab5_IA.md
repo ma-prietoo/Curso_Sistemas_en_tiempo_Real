@@ -1,862 +1,494 @@
 # RET — Informe de Evidencia de Tiempos
 
-**Grupo:** `María Prieto Ortega` `Mariana Zuluaga Yepes`  ·  **Placa:** `Nucleo-L476RG` - `ESP32-C6 Super Mini`
-**Plataforma principal:** ESP32-C6 Super Mini  
-**RTOS:** Zephyr `4.4.99`  
-**Target de compilación:** `esp32c6_devkitc/esp32c6/hpcore`  
-**Aplicación:** SoilSense Control  
+**Grupo:** `María Prieto Ortega` · `Rafael Torres Choperena` · `Mariana Zuluaga Yepes`  
+**Placas:** `Nucleo-L476RG` · `ESP32-C6 Super Mini`
 
----
+## 1. El sistema y su conjunto de tareas
 
-## §1. Requisitos temporales
+| ID | Requisito |
+|---|---|
+| REQ-SAMP-01 | Mientras el sistema está activo, deberá ejecutar el muestreo de presión y e-stop cada 1 ms, dentro de un plazo de 1 ms. |
+| REQ-CTRL-01 | Mientras el sistema está irrigando, deberá ejecutar el control cada 10 ms, dentro de un plazo de 10 ms. |
+| REQ-CONS-01 | Cuando el operador ingrese un comando válido, el sistema deberá procesarlo y mostrar la respuesta correspondiente en la consola. |
+| REQ-TEL-01 | Mientras el sistema está activo, deberá publicar telemetría cada 1 s. |
+| REQ-HMI-01 | Mientras la HMI está habilitada, deberá actualizar la pantalla cada 500 ms. |
+| REQ-FLOW-01 | Cuando se acumulen 100 pulsos de flujo, deberá procesar el lote en la siguiente iteración disponible. |
+| REQ-SAFE-01 | Si se presenta una sobrepresión o se activa la parada de emergencia, el sistema deberá cerrar la válvula para garantizar la seguridad. |
 
-### 1.1 Requisitos del sistema
+### Tareas y tiempos de ejecución en Nucleo-L476RG — Lab 2
 
-| ID | Requisito | Periodo o plazo | Criticidad | Evidencia |
-|---|---|---:|---|---|
-| REQ-SAMP-01 | Muestrear la presión del sistema. | 1 ms | Alta | Instrumentación GPIO, contadores internos y traza CTF |
-| REQ-CTRL-01 | Ejecutar el lazo de control. | 10 ms | Alta | Instrumentación GPIO, contadores internos y traza CTF |
-| REQ-CONS-01 | Actualizar el proceso de consumo. | 100 ms | Media | Instrumentación GPIO |
-| REQ-TEL-01 | Publicar telemetría. | 1000 ms | Baja | Consola serial |
-| REQ-FLOW-01 | Atender los pulsos del sensor de flujo. | Dirigido por eventos | Alta | ISR y cola de trabajo |
-| REQ-DISP-01 | Actualizar la interfaz visual. | 500 ms | Baja | Hilo de visualización |
-| REQ-SAFE-01 | Llevar el sistema a un estado seguro ante una falla crítica. | Inmediato | Alta | Estado `estop` y salida de válvula |
+| Tarea | Requisito | Tipo | Período o activación | Deadline | `C_i` observado | Instrumento |
+|---|---|---|---|---|---:|---|
+| Muestreo | REQ-SAMP-01 | Duro | 1 ms | 1 ms | 5 µs | Ancho de pulso D3, analizador lógico y Logic 2 |
+| Control | REQ-CTRL-01 | Duro | 10 ms | 10 ms | 2,5 µs | Ancho de pulso D4, analizador lógico y Logic 2 |
+| Consola (`help`) | REQ-CONS-01 | Firme | Por evento | No definida | 1,313 ms | Ancho de pulso D5, analizador lógico y Logic 2 |
+| Telemetría | REQ-TEL-01 | Suave | 1 s | 1 s | 6,1555 ms | Ancho de pulso D6, analizador lógico y Logic 2 |
+| Lote de flujo | REQ-FLOW-01 | Firme | Cada 100 pulsos | No definida | 70,5 µs | Ancho de pulso D7, analizador lógico y Logic 2 |
+| Pantalla OLED | REQ-HMI-01 | Suave | 500 ms | 500 ms | 25,06 ms | Ancho de pulso D8, analizador lógico y Logic 2 |
 
-### 1.2 Inventario acumulativo de tareas
+### Tareas y tiempos de ejecución en ESP32-C6 — Lab 3
 
-#### Medición de referencia en Nucleo-L476RG
+| Tarea | Requisito | Tipo | Período o activación | Deadline | `C_i` máximo medido | Instrumento |
+|---|---|---|---|---|---:|---|
+| Muestreo | REQ-SAMP-01 | Duro | 1 ms | 1 ms | 12,937 µs | Contador interno `k_cycle_get_32()` |
+| Control PI | REQ-CTRL-01 | Duro | 10 ms | 10 ms | 34,500 µs | Contador interno `k_cycle_get_32()` |
+| Consola (`calib`) | REQ-CONS-01 | Firme | Esporádica | No definido | 408,623 ms | Contador interno `k_cycle_get_32()` |
+| Telemetría USB | REQ-TEL-01 | Suave | 1 s | Flexible | 50,442 ms | Contador interno `k_cycle_get_32()` |
+| Lote de flujo | REQ-FLOW-01 | Firme | Cada 100 pulsos | No definido | No medido | No disponible |
+| Pantalla OLED | REQ-HMI-01 | Suave | 500 ms | 500 ms | No medido | No disponible |
 
-| Tarea | Activación | \(T_i\) | \(D_i\) | \(C_i\) medido | Instrumento |
-|---|---|---:|---:|---:|---|
-| Muestreo | Periódica | 1 ms | 1 ms | 5,4 µs | GPIO + analizador lógico |
-| Control | Periódica | 10 ms | 10 ms | 4,0 µs | GPIO + analizador lógico |
-| Consumo | Periódica | 100 ms | 100 ms | 2,0 µs | GPIO + analizador lógico |
-| Telemetría | Periódica | 1000 ms | 1000 ms | No determinado | Consola serial |
-| Sensor de flujo | Esporádica | Por evento | 5 ms | No determinado | ISR + GPIO |
-| Pantalla | Periódica | 500 ms | 500 ms | No determinado | GPIO |
+### Tareas y tiempos de ejecución en ESP32-C6 — Labs 4 y 5
 
-#### Medición acumulativa en ESP32-C6 Super Mini
+En Zephyr, un número de prioridad menor representa una prioridad más alta.
 
-| Tarea | Activación | \(T_i\) | \(D_i\) | Evidencia temporal | Instrumento |
-|---|---|---:|---:|---|---|
-| `sampling_tid` | Periódica, liberada por tick | 1 ms | 1 ms | `lat_peak_us`, `samp_jitter_peak_us` y eventos del planificador | `k_cycle_get_32()`, GPIO y CTF |
-| `control_tid` | Cada décimo tick | 10 ms | 10 ms | `ctrl_period_peak_us` y eventos de semáforo | `k_cycle_get_32()`, GPIO y CTF |
-| `console_tid` | Esporádica | Por comando | No crítico | Estados ready, running y blocked | CTF |
-| `telemetry_tid` | Periódica | 1000 ms | 1000 ms | Actividad serial | Consola y CTF |
-| `display_tid` | Periódica | 500 ms | 500 ms | Activación del hilo | CTF |
-| `flow_wq` | Esporádica | Por evento | 5 ms | Inicio y ejecución de la cola de trabajo | CTF |
-| `tracing_thread` | Fondo | Continuo | No aplica | Carga introducida por el observador | CTF |
-| `idle` | Fondo | Continuo | No aplica | Porcentaje de CPU disponible | CTF |
-
-> Desde el Lab 5, cada \(C_i\) o valor temporal debe indicar el instrumento con el que fue obtenido. Las mediciones internas, GPIO y CTF no representan necesariamente los mismos límites de tiempo.
-
----
+| Tarea | Requisito | Prioridad | Período o activación / deadline | `C_i` máximo medido | Instrumento |
+|---|---|---:|---|---:|---|
+| `sampling_tid` | REQ-SAMP-01 | 2 | 1 ms / 1 ms | 12 µs | Contador interno `k_cycle_get_32()` |
+| `control_tid` | REQ-CTRL-01 | 3 | 10 ms / 10 ms | 5 µs | Contador interno `k_cycle_get_32()` |
+| `flow_wq` | REQ-FLOW-01 | 5 | Cada 100 pulsos / no definido | 165 µs | Contador interno `k_cycle_get_32()` |
+| `display_tid` | REQ-HMI-01 | 7 | 500 ms / 500 ms | No medido | No disponible |
+| `telemetry_tid` | REQ-TEL-01 | 8 | 1 s / 1 s | 165 µs | Contador interno `k_cycle_get_32()` |
+| `console_tid` | REQ-CONS-01 | 9 | Esporádica / no definido | 400,030 ms | Contador interno `k_cycle_get_32()` |
 
 ## Tareas de los laboratorios
 
-### Arquitectura inicial: superloop
+### Diagrama del superloop — Lab 2, tarea A
 
 ```mermaid
 flowchart TD
-    A[Inicio] --> B[Inicialización GPIO ADC y UART]
-    B --> C[Bucle principal]
-    C --> D[Muestreo]
-    D --> E[Control]
-    E --> F[Consumo]
-    F --> G[Telemetría]
-    G --> H[Visualización]
-    H --> C
-    I[ISR de flujo] --> C
+    T["Temporizador cada 1 ms: ISR"] --> P["Incrementa ticks_pending y actualiza backlog_peak"]
+    F["Flanco de flujo D9 / PC7: ISR"] --> Q["Incrementa flow_pulses"]
+
+    P --> L["Superloop: while (1)"]
+
+    L --> C["Lee consola D5 / PB4"]
+    C --> H["Actualiza pantalla OLED D8 / PA9"]
+    H --> E["Envía telemetría D6 / PB10"]
+    E --> D{"¿Hay tick pendiente?"}
+
+    D -- Sí --> S["Muestrea presión y e-stop D3 / PB3"]
+    S --> K{"¿Van 10 muestras?"}
+    K -- Sí --> R["Control D4 / PB5 y válvula PA5"]
+    K -- No --> B["Revisa y procesa lote de flujo D7 / PA8"]
+    R --> B
+    D -- No --> B
+
+    Q --> B
+    B --> L
 ```
 
-La arquitectura inicial concentraba todas las actividades en un único bucle. Esto facilitaba la implementación, pero producía interferencia entre tareas, tiempos de respuesta variables y dificultad para asignar prioridades.
+### Lectura del flujo
 
-### Arquitectura con kernel
+- El temporizador genera una interrupción cada 1 ms. La ISR no ejecuta directamente el muestreo: incrementa `ticks_pending` y actualiza `backlog_peak` cuando se acumulan ticks.
 
-```mermaid
-flowchart TD
-    T[Interrupción periódica] --> Q[Cola de muestras]
-    Q --> S[sampling_tid]
-    S --> SEM[Semáforo cada 10 muestras]
-    SEM --> C[control_tid]
-    C --> V[Salida de válvula]
+- El superloop recorre siempre el mismo orden: consola, pantalla OLED y telemetría. Después revisa si hay un tick de muestreo pendiente.
 
-    F[ISR sensor de flujo] --> W[flow_wq]
-    W --> D[Datos compartidos]
+- Si existe un tick pendiente, ejecuta el muestreo de presión y e-stop en D3. Cada diez muestras ejecuta además el control en D4 y actualiza la válvula en PA5.
 
-    TEL[telemetry_tid] --> U[USB Serial]
-    DISP[display_tid] --> H[Interfaz]
-    CONS[console_tid] --> CMD[Comandos]
-```
+- La entrada de flujo llega por D9/PC7. Su ISR incrementa `flow_pulses`; el superloop revisa ese contador en la tarea de lote de flujo, instrumentada en D7.
 
-La separación en hilos permite observar directamente qué tarea se ejecuta, cuándo queda lista, cuándo se bloquea y qué tarea recibe el procesador después de una interrupción.
+- La tarea de flujo se revisa en cada vuelta del ciclo. Cuando no hay un tick pendiente, el superloop pasa directamente desde la telemetría hacia la revisión de flujo.
 
----
+- Como todas las tareas comparten un único `while (1)`, una tarea lenta bloquea temporalmente a las demás. La actualización de la OLED y el comando `calib` pueden retrasar el muestreo y acumular `ticks_pending`.
 
-## §2. Registro de decisiones de arquitectura
+## 2. ADRs
 
-### ADR-001 — Migración del superloop a una arquitectura multihilo
+### ADR-001 — Arquitectura del nodo con kernel multihilo
 
-**Estado:** Aceptada.
+**Contexto:** En la línea base del superloop de la ESP32-C6, el comando `calib` bloqueó muestreo y control durante aproximadamente 408 ms. El jitter máximo de muestreo alcanzó 408,297 ms, el período máximo de control alcanzó 416,317 ms y se acumularon 409 ticks.
 
-**Contexto:**  
-La implementación inicial ejecutaba muestreo, control, consumo, telemetría y consola dentro de un único superloop. Una actividad larga podía retrasar todas las tareas posteriores.
+**Decisión:** Migrar todas las tareas del superloop a entidades del kernel de Zephyr. Muestreo se ejecuta en `sampling_tid`; control en `control_tid`; flujo se procesa en la cola de trabajo privada `flow_wq`; pantalla, telemetría y consola se ejecutan en sus propios hilos. `main` solamente inicializa el hardware, inicia el temporizador y retorna.
 
-**Decisión:**  
-Separar las actividades principales en hilos de Zephyr, utilizar una cola para entregar muestras y un semáforo para liberar periódicamente el lazo de control.
+**Justificación:** En la versión con kernel y sin tracing, incluso durante `calib`, el jitter máximo de muestreo fue 7 µs, el período máximo de control fue 10,005 ms y `backlog_peak` permaneció en 0. Esto elimina el bloqueo de aproximadamente 408 ms que afectaba las tareas críticas en el superloop.
 
-**Justificación:**
+**Costo:** La transición desde la liberación de control hasta su inicio tuvo un máximo de 15 µs. Como control se libera 100 veces por segundo, el costo estimado es:
 
-- Permite asignar prioridades.
-- Hace explícitas las dependencias.
-- Permite bloquear tareas sin consumir CPU.
-- Facilita la medición y el análisis de planificabilidad.
-- Permite observar preempciones y cambios de contexto.
+\[
+100 \times 15\ \mu s = 1500\ \mu s/s = 1,5\ ms/s
+\]
 
-**Consecuencias:**
-
-- Aumenta el uso de memoria.
-- Aparecen costos por cambios de contexto y sincronización.
-- Es necesario proteger los datos compartidos.
-- El comportamiento deja de ser totalmente secuencial.
-
----
+**Estado:** Aceptada e implementada.
 
 ### ADR-002 — Captura CTF en RAM para el ESP32-C6
 
-**Estado:** Aceptada.
+**Contexto:** La guía original del Lab 5 utiliza un ESP32-S3 con dos conexiones USB: una para consola y otra para transmitir CTF por UART a 4 Mbaud. El ESP32-C6 Super Mini disponible posee una única conexión USB Serial/JTAG, por lo que no es posible reproducir directamente esa separación de puertos.
 
-**Contexto:**  
-El procedimiento original del Lab 5 utiliza un ESP32-S3 con dos conexiones USB: una para consola y otra para transmitir CTF por UART a 4 Mbaud. El ESP32-C6 Super Mini disponible presenta únicamente `/dev/ttyACM0`, correspondiente al USB Serial/JTAG integrado.
+**Decisión:** Configurar el backend CTF de Zephyr para almacenar los eventos en un búfer de RAM de 65 536 bytes. Después de la ejecución, el búfer se extrae mediante el JTAG integrado y GDB y se decodifica con `trace_viewer.py`.
 
-**Decisión:**  
-Usar el backend CTF en RAM de Zephyr con un buffer de 65 536 bytes y extraerlo mediante el JTAG integrado utilizando OpenOCD y GDB.
+**Justificación:** La adaptación conserva los eventos del planificador, nombres de hilos, interrupciones, cambios de contexto, semáforos y estados `ready`, `running` y `blocked`. Por tanto, permite estudiar la historia del planificador requerida por el laboratorio.
 
-**Configuración empleada:**
+**Limitación:** La captura no se transmite continuamente. Termina cuando el búfer se llena, por lo que solamente conserva una ventana aproximada de 3,14 s. El uso de JTAG también obliga a detener temporalmente el procesador para extraer los datos.
 
-```conf
-CONFIG_TRACING=y
-CONFIG_TRACING_CTF=y
-CONFIG_TRACING_BACKEND_RAM=y
-CONFIG_RAM_TRACING_BUFFER_SIZE=65536
+**Estado:** Aceptada e implementada para el ESP32-C6 Super Mini.
 
-CONFIG_TRACING_SYSCALL=n
-CONFIG_TRACING_TIMER=n
-CONFIG_TRACING_MESSAGE_QUEUE=n
-CONFIG_TRACING_IDLE=n
-```
+## 3. Evidencia por semana
 
-**Justificación:**
+### Semana 2 — Línea base del superloop
 
-- Conserva los eventos del planificador requeridos por el laboratorio.
-- No requiere un segundo adaptador UART.
-- Aprovecha el USB Serial/JTAG integrado del ESP32-C6.
-- Permite extraer y decodificar una traza CTF válida.
+**Requisitos verificados:** REQ-SAMP-01, REQ-CTRL-01 y REQ-FLOW-01.  
+**Placa:** Nucleo-L476RG  
+**Instrumento:** Analizador lógico con Logic 2  
+**Señales:** D3 muestreo, D4 control, D5 consola, D6 telemetría, D7 lote de flujo, D8 OLED y D9 entrada de flujo.
 
-**Consecuencias:**
-
-- La captura no se transmite continuamente.
-- El buffer contiene solamente una ventana temporal finita.
-- GDB debe detener el procesador para extraer la memoria.
-- No se reproduce exactamente la arquitectura de dos puertos del ESP32-S3.
-- La extracción por JTAG no debe confundirse con una captura no intrusiva.
-
-**Costo aceptado:**  
-Se acepta la captura limitada porque permite demostrar los eventos del planificador y completar el análisis con el hardware disponible.
-
----
-
-## §3. Evidencia experimental
-
-# Semana 2 — Caracterización del superloop
-
-La primera caracterización se realizó sobre la arquitectura secuencial. La instrumentación GPIO permitió obtener tiempos de ejecución y periodos aproximados de las tareas principales.
-
-### Resultados principales
-
-| Métrica | Resultado |
-|---|---:|
-| Periodo de muestreo | 1 ms |
-| Periodo de control | 10 ms |
-| Periodo de consumo | 100 ms |
-| Periodo de telemetría | 1000 ms |
-| Ejecución de muestreo | 5,4 µs |
-| Ejecución de control | 4,0 µs |
-| Ejecución de consumo | 2,0 µs |
-
-### Observación
-
-El superloop cumplía en condiciones normales, pero no ofrecía aislamiento temporal. Una operación extensa en consola o telemetría podía retrasar las tareas más críticas.
-
----
-
-# Semana 3 — Separación del hilo de muestreo
-
-El muestreo fue retirado del superloop y ejecutado en un hilo independiente. Una interrupción periódica libera muestras mediante una cola de mensajes.
-
-### Cadena de activación
-
-```text
-Tick periódico
-    ↓
-ISR
-    ↓
-k_msgq_put()
-    ↓
-sampling_tid pasa a ready
-    ↓
-El planificador selecciona sampling_tid
-    ↓
-Se ejecuta el muestreo
-    ↓
-k_msgq_get() bloquea nuevamente el hilo
-```
-
-### Resultado
-
-La nueva estructura redujo la dependencia del muestreo respecto de la consola y de otras tareas de menor prioridad.
-
-### Riesgo identificado
-
-La medición interna de latencia no incluye exactamente los mismos límites que una medición externa por GPIO. Por eso ambas deben registrarse como instrumentos diferentes.
-
----
-
-# Semana 4 — Kernel, prioridades y costo del cambio de contexto
-
-Durante el Lab 4 se terminó de dividir la aplicación en hilos y se instrumentaron las siguientes actividades:
-
-- Muestreo.
-- Control.
-- Consola.
-- Telemetría.
-- Visualización.
-- Cola de trabajo para el sensor de flujo.
-- Hilo idle.
-
-### Configuración base
-
-```conf
-CONFIG_GPIO=y
-CONFIG_ADC=y
-CONFIG_SERIAL=y
-CONFIG_CONSOLE=y
-CONFIG_UART_CONSOLE=y
-
-CONFIG_MAIN_STACK_SIZE=1536
-CONFIG_IDLE_STACK_SIZE=256
-CONFIG_ISR_STACK_SIZE=512
-CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE=512
-
-CONFIG_THREAD_NAME=y
-CONFIG_THREAD_ANALYZER=y
-CONFIG_THREAD_ANALYZER_USE_PRINTK=y
-```
-
-### Variables de tiempo incorporadas
-
-| Variable | Significado |
-|---|---|
-| `lat_peak_us` | Máxima latencia interna entre liberación y atención del muestreo |
-| `samp_jitter_peak_us` | Máximo jitter observado en el muestreo |
-| `ctrl_period_peak_us` | Mayor periodo observado en el lazo de control |
-| `ctx_gap_peak_us` | Mayor separación interna asociada con la entrega del procesador |
-
-### Resultado del Lab 4
-
-| Métrica | Valor observado |
-|---|---:|
-| `lat_peak_us` | 48 µs |
-| `samp_jitter_peak_us` | 35–43 µs |
-| `ctrl_period_peak_us` | 10 041–10 048 µs |
-| `ctx_gap_peak_us` | 74–75 µs |
-
-> Estos valores fueron obtenidos con contadores internos y no equivalen automáticamente al tiempo de un cambio de contexto aislado medido por el analizador lógico.
-
-### Conclusión del Lab 4
-
-La arquitectura multihilo hizo explícita la interferencia entre tareas. El muestreo pudo adquirir mayor prioridad que la consola, mientras que el control fue liberado cada diez muestras mediante un semáforo.
-
----
-
-# Semana 5 — Tracing: observar el planificador
-
-## 3.5.1 Objetivo
-
-El propósito del Lab 5 fue complementar las mediciones numéricas con una historia del planificador:
-
-- Qué hilo estaba ejecutándose.
-- Qué evento hizo ready a otro hilo.
-- Cuándo ocurrió la preempción.
-- Qué hilo recibió el procesador.
-- Cuándo volvió a bloquearse.
-- Cuánto perturba el propio tracing.
-
-Debido al hardware disponible, la traza CTF fue almacenada en RAM y extraída mediante USB-JTAG.
-
----
-
-## 3.5.2 Tarea A — Activación del tracing
-
-### Compilación
-
-```bash
-cd ~/zephyrproject
-source .venv/bin/activate
-
-west build -p \
-  -b esp32c6_devkitc/esp32c6/hpcore \
-  /home/maria/4101137-real-time-systems/firmware/superloop -- \
-  -DEXTRA_CONF_FILE=trace.conf
-```
-
-### Resultado de compilación
-
-```text
-Successfully created ESP32-C6 image.
-```
-
-La configuración final confirmó:
-
-```text
-CONFIG_THREAD_NAME=y
-CONFIG_TRACING=y
-CONFIG_TRACING_CTF=y
-CONFIG_TRACING_BACKEND_RAM=y
-CONFIG_RAM_TRACING_BUFFER_SIZE=65536
-```
-
-### Extracción del buffer
-
-La traza fue extraída desde `ram_tracing` mediante GDB:
-
-```gdb
-dump binary memory /home/maria/zephyrproject/trace/channel0_0 \
-    &ram_tracing[0] &ram_tracing[65327]
-```
-
-Posteriormente se copió el archivo de metadatos CTF y se abrió la captura con `trace_viewer.py`.
-
-### Resultado de la primera traza
-
-| Propiedad | Resultado |
-|---|---:|
-| Eventos decodificados | 2761 |
-| Hilos reconocidos | 9 |
-| Ventana temporal | 3037,547 ms |
-| Cambios de entrada registrados | 383 |
-| Cambios de salida registrados | 362 |
-| Eventos `thread_sched_ready` | 230 |
-| Eventos `thread_sched_pend` | 166 |
-| Entradas a ISR | 186 |
-| Salidas de ISR | 183 |
-
-### Hilos identificados
-
-```text
-sampling_tid
-idle
-console_tid
-control_tid
-display_tid
-tracing_thread
-telemetry_tid
-flow_wq
-main
-```
-
-### Evidencia de la Tarea A
-
-La vista Gantt mostró carriles con nombres de hilos, estados `running`, `ready`, `blocked` y `sleep`, además de los eventos de ISR.
-
-**Resultado:** Tarea A completada. El tracing CTF funciona y los hilos son identificables por nombre.
-
----
-
-## 3.5.3 Tarea B — Historia de una preempción
-
-La captura específica de `calib` produjo:
-
-| Propiedad | Resultado |
-|---|---:|
-| Eventos | 2764 |
-| Hilos visibles en la ventana | 5 |
-| Duración | 3136,906 ms |
-| Backend | CTF en RAM |
-| Tamaño del buffer | 65 536 bytes |
-
-### Identificación de hilos por dirección
-
-| Dirección | Hilo |
-|---|---|
-| `0x40810288` | `sampling_tid` |
-| `0x408103c0` | `console_tid` |
-| `0x40810150` | `control_tid` |
-| `0x40810a30` | `idle` |
-
-### Tick seleccionado
-
-| Instante | Evento | Interpretación |
-|---:|---|---|
-| 815,125 µs | `isr_enter` | Comienza la ISR del tick |
-| 826,500 µs | `thread_sched_ready` de `console_tid` | La consola queda lista |
-| 843,000 µs | `thread_sched_ready` de `sampling_tid` | La muestra queda disponible |
-| 855,500 µs | `isr_exit` | Finaliza la ISR |
-| 866,375 µs | `thread_switched_out` de `idle` | Idle entrega la CPU |
-| 876,313 µs | `thread_switched_in` de `sampling_tid` | Muestreo comienza a ejecutar |
-| 888,313 µs | `gpio_port_set_bits_raw_enter` | Sube `instr_samp` |
-| 936,375 µs | `thread_sched_pend` de `sampling_tid` | Muestreo vuelve a esperar |
-| 948,813 µs | `thread_switched_out` de `sampling_tid` | Muestreo deja la CPU |
-| 963,188 µs | `thread_switched_in` de `console_tid` | La consola continúa |
-
-### Cadena observada
-
-```text
-Tick ISR
-  → console_tid ready
-  → sampling_tid ready
-  → fin de ISR
-  → idle sale
-  → sampling_tid entra
-  → instr_samp sube
-  → sampling_tid queda pendiente
-  → sampling_tid sale
-  → console_tid entra
-```
-
-En el tick elegido, la tarea que estaba ejecutándose antes de la ISR era `idle`. La consola estaba lista, pero no estaba ejecutándose justo antes de la activación. Por lo tanto, la captura demuestra una entrega completa del procesador y la selección prioritaria de muestreo, aunque no reproduce literalmente una consola ejecutándose y siendo interrumpida.
-
-### Tiempos derivados
-
-| Medición | Operación | Resultado |
-|---|---|---:|
-| ISR → entrada de muestreo | 876,313 − 815,125 µs | 61,188 µs |
-| ISR → subida de `instr_samp` | 888,313 − 815,125 µs | 73,188 µs |
-| Muestreo ready → running | 876,313 − 843,000 µs | 33,313 µs |
-| Cambio idle → muestreo | 876,313 − 866,375 µs | 9,938 µs |
-| Cambio muestreo → consola | 963,188 − 948,813 µs | 14,375 µs |
-| Ejecución visible antes de bloquearse | 936,375 − 876,313 µs | 60,062 µs |
-
-### Comparación con las métricas internas
-
-| Fuente | Valor | Límites medidos |
+| Medición | Valor obtenido | Referencia |
 |---|---:|---|
-| Traza CTF | 61,188 µs | `isr_enter` → `sampling_tid switched_in` |
-| Traza CTF + GPIO instrumentado | 73,188 µs | `isr_enter` → inicio de `instr_samp` |
-| `lat_peak_us` con tracing | 48 µs | Límites internos definidos en el firmware |
-| `ctx_gap_peak_us` con tracing | 75 µs | Mayor separación interna acumulada |
-| Cambio de contexto visible | 9,938 µs | `idle switched_out` → `sampling switched_in` |
+| Período real de muestreo, promedio | **999 µs** | 1000 µs |
+| Jitter máximo de muestreo durante ≥ 30 s | **22 870 µs** | Línea base con OLED y caché |
+| Latencia ISR → servicio del superloop, pulso de flujo | **12,5 µs** | D9 → D7 |
+| Jitter máximo de muestreo con la caché flash desactivada | **24 580 µs** | Aumentó aproximadamente 1710 µs |
+| Jitter de muestreo con el comando bloqueante activo | **431 332 µs** | Comando `calib` |
+| `backlog_peak`, inactivo → durante el comando bloqueante | **30 → 432 ticks** | Contador interno del firmware |
 
-Los valores difieren porque cada instrumento y cada métrica utilizan puntos iniciales y finales distintos. No es correcto comparar 9,938 µs con 75 µs como si fueran la misma magnitud.
+> **Criterio usado para el jitter máximo tardío**
+>
+> \[
+> jitter = período\ máximo\ observado - 1000\ \mu s
+> \]
+>
+> Este valor indica cuánto se retrasó la ejecución del muestreo frente a su período nominal de 1 ms.
 
----
+La frecuencia media se mantuvo cercana a 1 kHz, pero la actualización de la OLED produjo huecos de hasta 25,58 ms en D3. El comando `calib` bloqueó el único superloop durante 408,882 ms, acumuló 432 ticks y retrasó tanto el muestreo como el control.
 
-### Décimo tick: liberación del control
+#### Análisis de causa raíz del comando `calib`
 
-En el décimo tick, el muestreo ejecutó `k_sem_give()` y liberó el hilo de control.
+En `firmware/superloop/src/main.c`, la función `cmd_calib()` ejecuta `k_busy_wait(400)` dentro de un ciclo de 1000 rondas. Esto bloquea el superloop aproximadamente 400 ms.
 
-| Instante | Evento | Interpretación |
-|---:|---|---|
-| 408,815 ms | `isr_enter` | Tick periódico |
-| 408,827 ms | `console_tid ready` | Consola lista |
-| 408,843 ms | `sampling_tid ready` | Muestreo listo |
-| 408,856 ms | `isr_exit` | Termina ISR |
-| 408,876 ms | `sampling_tid switched_in` | Ejecuta muestreo |
-| 408,931 ms | `semaphore_give_enter` | Muestreo entrega semáforo |
-| 408,940 ms | `control_tid ready` | Control queda listo |
-| 408,948 ms | `semaphore_give_exit` | Termina la entrega |
-| 408,961 ms | `sampling_tid pend` | Muestreo se bloquea |
-| 408,974 ms | `sampling_tid switched_out` | Muestreo deja la CPU |
-| 408,988 ms | `control_tid switched_in` | El control recibe la CPU |
-| 408,996 ms | `semaphore_take_exit` | Control obtiene el semáforo |
-| 409,004 ms | GPIO de control | Inicio de la ejecución instrumentada |
-| 409,031 ms | `semaphore_take_enter` | Control vuelve a esperar |
-| 409,038 ms | `semaphore_take_blocking` | Semáforo no disponible |
-| 409,050 ms | `control_tid pend` | Control queda bloqueado |
-| 409,064 ms | `control_tid switched_out` | Control entrega la CPU |
-| 409,077 ms | `console_tid switched_in` | Regresa la consola |
+El comando se invoca desde `console_handle()` y la consola se ejecuta dentro del único `while (1)`. Mientras la calibración no retorna, el programa no atiende `ticks_pending`; por ello se observó un período máximo de D3 de 432,332 ms y `backlog_peak=432`.
 
-### Cadena del décimo tick
+### Semana 3 — Comparación de la línea base del C6 y el silicio
 
-```text
-ISR
-  → sampling_tid
-  → k_sem_give()
-  → control_tid ready
-  → sampling_tid se bloquea
-  → control_tid ejecuta
-  → k_sem_take()
-  → control_tid se bloquea
-  → console_tid continúa
-```
+**Requisitos verificados:** REQ-SAMP-01 y REQ-CTRL-01.
 
-### Tiempo desde `k_sem_give()` hasta control
+Aunque la guía está diseñada para el ESP32-S3, se utilizó un ESP32-C6 Super Mini. El objetivo de realizar el port mediante devicetree y trasladar el muestreo a un hilo de ejecución se mantuvo.
 
-```text
-408,988 ms − 408,931 ms = 57 µs
-```
-
-### Tiempo desde `control_tid ready` hasta ejecución
-
-```text
-408,988 ms − 408,940 ms = 48 µs
-```
-
----
-
-## 3.5.4 Ventana de captura y saturación
-
-En el montaje original del ESP32-S3 se esperaba conservar aproximadamente los primeros 75 ms de `calib` cuando el hilo de transmisión quedaba sin CPU y el buffer se llenaba.
-
-En el ESP32-C6 se utilizó un buffer CTF en RAM. La captura alcanzó aproximadamente 3,137 s antes de llenar sus 65 536 bytes.
-
-GDB confirmó:
-
-```text
-pos = 65331
-buffer_full = true
-```
-
-### Interpretación
-
-El buffer conserva una ventana finita porque:
-
-1. Los eventos se almacenan en RAM.
-2. No existe transmisión continua por un segundo puerto.
-3. Cada ISR, cambio de contexto y operación instrumentada consume espacio.
-4. Al llenarse el buffer, ya no se pueden conservar eventos adicionales.
-5. La duración observada depende de la tasa de eventos y no únicamente del tiempo real.
-
-Por eso el resultado no fue exactamente 75 ms. La causa física es la misma —capacidad finita del observador—, pero el backend y la tasa de eventos son diferentes.
-
----
-
-## 3.5.5 Carga de CPU observada
-
-Durante la captura de calibración, el visor presentó:
-
-| Hilo o estado | Uso de CPU |
-|---|---:|
-| `sampling_tid` | 56 % |
-| `idle` | 23 % |
-| `console_tid` | 13 % |
-| `control_tid` | 6 % |
-| `display_tid` | 0 % |
-| CPU ocupada indicada | 75 % |
-
-La suma visible es aproximadamente 98 %. La diferencia respecto al 100 % se explica por redondeo, ISR, eventos de inicialización y actividad del tracer no mostrada como una categoría independiente en esa ventana.
-
-### Interpretación
-
-- El muestreo domina el uso de CPU durante `calib`.
-- El 23 % de idle muestra que aún existe margen de procesador.
-- La consola y el control consumen una fracción menor.
-- El tracing también consume CPU y memoria, aunque su costo no siempre aparece como una línea porcentual independiente.
-
----
-
-## 3.5.6 Tarea C — Precio de observar
-
-Para estimar la perturbación se compararon dos compilaciones:
-
-1. Firmware con tracing CTF activo.
-2. Firmware normal sin `trace.conf`.
-
-Antes de cada medición se ejecutó:
-
-```text
-timing reset
-status
-```
-
-### Resultados
-
-| Métrica | Tracing activo | Tracing desactivado | Diferencia |
+| Medición | Nucleo Lab 2 | C6 superloop | C6 + `sampling_tid` |
 |---|---:|---:|---:|
-| `lat_peak_us` | 48 µs | 12 µs | +36 µs |
-| `samp_jitter_peak_us` | 43 µs | 7 µs | +36 µs |
-| `ctrl_period_peak_us` | 10 048 µs | 10 005 µs | +43 µs |
-| `ctx_gap_peak_us` | 75 µs | 15 µs | +60 µs |
+| Jitter máximo normal | 22,870 ms | 50,446 ms | 2 µs |
+| Período máximo normal | 23,870 ms | 51,446 ms | 1,001 ms |
+| Jitter con `calib` | 431,332 ms | 408,297 ms | 2 µs |
+| Período máximo con `calib` | 432,332 ms | 409,297 ms | 1,001 ms |
+| `backlog_peak` con `calib` | 432 ticks | 409 ticks | 0 ticks |
+| `lat_peak_us` | — | — | 9 µs |
+| Período máximo de control con `calib` | — | 416,317 ms | 420,004 ms |
+| Duración de `calib` | 408,882 ms | 407,482 ms | 408,516 ms |
 
-### Sobrecosto sobre el jitter máximo
+#### Evidencia del port
+
+El port se realizó mediante `firmware/superloop/boards/esp32c6_devkitc_hpcore.overlay`. El archivo define los GPIO de la ESP32-C6, la entrada de flujo, la válvula, las señales de instrumentación y la consola USB Serial/JTAG.
+
+La aplicación se compiló, se grabó en la placa y respondió al comando `status`.
+
+El primer commit de la adaptación a ESP32-C6 fue `8e72f6f`:
+
+```text
+.../esp32c6_devkitc_hpcore.overlay | 12 +++++
+firmware/superloop/src/main.c       | 37 ++++++++++++++--
+2 files changed, 46 insertions(+), 3 deletions(-)
+```
+
+#### Comparación de silicios
+
+Aunque la ESP32-C6 funciona a una frecuencia mayor que la Nucleo-L476RG, su superloop tuvo mayor jitter máximo normal: 50,446 ms frente a 22,870 ms.
+
+La frecuencia de CPU no determina por sí sola el peor caso. La consola USB, `printk`, la ejecución desde flash con caché y las tareas bloqueantes también influyen en el tiempo máximo observado.
+
+La comparación es indicativa: la Nucleo se midió con analizador lógico y la C6 con instrumentación interna mediante `k_cycle_get_32()`.
+
+#### Sampling frente a control durante `calib`
+
+Durante `calib`, el hilo de muestreo mantuvo jitter máximo de 2 µs, período máximo de 1,001 ms y `backlog_peak=0`; por ello cumple REQ-SAMP-01.
+
+Control permaneció en el superloop y alcanzó un período máximo de 420,004 ms, mayor que su deadline de 10 ms. Por tanto, REQ-CTRL-01 no se cumple durante `calib` en esta etapa.
+
+#### Estado compartido
+
+| Variable | Escritores | Lectores |
+|---|---|---|
+| `pressure_mv` | Hilo de muestreo | Control, telemetría, pantalla y `status` |
+| `estop` | Hilo de muestreo y comando `clear` | Control, telemetría, pantalla y `status` |
+| `setpoint_mv` | Joystick y comando `set` | Control, telemetría, pantalla y `status` |
+
+El programa funciona en esta prueba porque la C6 tiene un solo núcleo principal y usa enteros alineados, pero en C todavía pueden existir carreras de datos.
+
+### Semana 4 — Migración completa al kernel y comparación A/B
+
+**Requisitos verificados:** REQ-SAMP-01 y REQ-CTRL-01.
+
+En esta semana se completó la migración del superloop a Zephyr. Las tareas se organizaron por prioridad: `sampling_tid` (prioridad 2), `control_tid` (3), `flow_wq` (5), `display_tid` (7), `telemetry_tid` (8) y `console_tid` (9).
+
+La ISR del temporizador publica las liberaciones de muestreo en `tick_q`. Cada décima muestra entrega el semáforo `control_sem` para liberar control. La ISR de flujo programa `task_flow_batch()` en una cola de trabajo privada. Cada hilo se bloquea mientras no tiene trabajo, por lo que no consume CPU mediante espera activa.
+
+| Medición en ESP32-C6 | C6 superloop, semana 3 | Predicción kernel | Kernel, semana 4 |
+|---|---:|---:|---:|
+| Jitter máximo de muestreo | 50,446 ms | ≤ 10 µs | 7 µs |
+| Jitter máximo con `calib` | 408,297 ms | ≤ 10 µs | 7 µs |
+| Período máximo de control con `calib` | 416,317 ms | ≈ 10 ms | 10,005 ms |
+| Latencia ISR → hilo (`lat_peak_us`) | — | ≤ 20 µs | 12 µs |
+| Brecha interna liberación → inicio de control | — | ≤ 20 µs | 15 µs |
+| Uso máximo de pila de `control_tid` | — | < 1024 bytes | 236/1024 bytes |
+
+La brecha de 15 µs se obtuvo mediante instrumentación interna entre la entrega de `control_sem` y el inicio de `control_tid`. Es una aproximación al costo de despacho y cambio de contexto, pero no equivale a una medición externa mediante GPIO.
+
+Las mediciones se realizaron en la misma ESP32-C6 y bajo las mismas condiciones: ejecución normal por al menos 30 segundos y ejecución del comando `calib`. Debido a que no se contó con un analizador lógico compatible con los pines de la C6, los valores se obtuvieron mediante instrumentación interna con `k_cycle_get_32()`.
+
+Durante la condición normal, el kernel mantuvo `backlog_peak=0`, `samp_jitter_peak_us=7` y `ctrl_period_peak_us=10005`. Durante `calib`, los mismos máximos se conservaron.
+
+La migración elimina el bloqueo de aproximadamente 408 ms que producía el superloop. Con el kernel, `calib` se ejecuta en el hilo de consola de menor prioridad, mientras muestreo y control continúan ejecutándose cerca de sus períodos nominales.
+
+El período máximo de control fue 10,005 ms, es decir, 5 µs superior al deadline estricto de 10 ms. Por tanto, la medición demuestra una mejora sustancial, pero no constituye por sí sola una prueba formal de cumplimiento estricto de REQ-CTRL-01.
+
+#### Costo del cambio de contexto
+
+Cada diez muestras, `sampling_tid` libera `control_tid` mediante `control_sem` y luego vuelve a bloquearse. La brecha máxima medida entre la liberación y el inicio de control fue 15 µs.
+
+Control se libera una vez cada 10 ms, es decir, 100 veces por segundo:
 
 \[
-\Delta J = J_{\text{on}} - J_{\text{off}}
+100\ liberaciones/s \times 15\ \mu s
+=1500\ \mu s/s
+=1,5\ ms/s
 \]
 
-\[
-\Delta J = 43\ \mu s - 7\ \mu s = 36\ \mu s
-\]
+El costo máximo estimado de estas transiciones es 1,5 ms por segundo de ejecución, equivalente a aproximadamente 0,15 %.
 
-### Factor de incremento
+#### Marcas de uso máximo de pila
 
-\[
-\frac{43}{7} = 6,14
-\]
+El comando `threads`, que ejecuta `thread_analyzer_print(0)`, produjo los siguientes valores bajo ejecución con telemetría, consola, pantalla y `calib`.
 
-El jitter máximo con tracing fue aproximadamente 6,14 veces el valor sin tracing.
+| Hilo o cola | Pila usada | Pila asignada | Uso |
+|---|---:|---:|---:|
+| `sampling_tid` | 252 bytes | 1536 bytes | 16 % |
+| `control_tid` | 236 bytes | 1024 bytes | 23 % |
+| `flow_wq` | 268 bytes | 1024 bytes | 26 % |
+| `display_tid` | 220 bytes | 2048 bytes | 10 % |
+| `telemetry_tid` | 660 bytes | 2048 bytes | 32 % |
+| `console_tid` | 804 bytes | 2048 bytes | 39 % |
 
-### Incremento porcentual
+El hilo más cercano a su límite fue `console_tid`, con 804 de 2048 bytes utilizados. Ninguna pila mostró riesgo de desbordamiento durante esta prueba.
 
-\[
-\frac{43-7}{7}\times100 = 514,3\%
-\]
+### Semana 5 — Trazado del planificador y preempción
 
-### Interpretación
+**Requisitos observados:** REQ-SAMP-01, REQ-CTRL-01 y REQ-CONS-01.
 
-El tracing introduce trabajo adicional por cada evento registrado:
+#### Plataforma e instrumento utilizado
 
-- Escritura del identificador del evento.
-- Escritura de marcas de tiempo.
-- Escritura de parámetros.
-- Actualización del buffer CTF.
-- Instrumentación adicional de GPIO y del kernel.
+El laboratorio se ejecutó sobre un ESP32-C6 Super Mini, compatible con la configuración `esp32c6_devkitc/esp32c6/hpcore`, usando Zephyr 4.4.99.
 
-La traza permite explicar el comportamiento del planificador, pero altera el sistema observado. Por eso debe emplearse junto con una medición menos intrusiva.
+Debido a que la tarjeta dispone de un único puerto USB Serial/JTAG, el trazado CTF se almacenó en un búfer de RAM de 65 536 bytes y posteriormente se extrajo mediante JTAG/GDB.
 
----
+La captura utilizada para el análisis contiene 2764 eventos, cinco hilos visibles y una ventana temporal de 3136,906 ms. Se identificaron `sampling_tid`, `console_tid`, `control_tid`, `display_tid` e `idle`, además de las interrupciones del sistema.
 
-## 3.5.7 Tabla de mediciones del Lab 5
+![Visor CTF con los hilos identificados](evidencias/lab05_tarea_a_hilos_ctf.png)
+
+*Figura 1. Captura CTF abierta en el visor con los hilos del nodo identificados.*
+
+#### Tabla de mediciones
 
 | Medición | Predicción | Valor obtenido | Contraste |
 |---|---:|---:|---|
-| Cambio de contexto según la traza | ≤ 20 µs | 9,938 µs | `ctx_gap_peak_us` sin tracing: 15 µs |
-| Tick ISR → inicio de muestreo | ≤ 75 µs | 73,188 µs | `lat_peak_us` con tracing: 48 µs |
-| Carga de CPU por hilo | Muestreo dominante e idle presente | sampling 56 %, idle 23 %, consola 13 %, control 6 %, display 0 % | Total visible ≈ 98 % |
-| Sobrecosto de tracing en jitter máximo | ≤ 40 µs | +36 µs | 43 µs con tracing frente a 7 µs sin tracing |
+| Cambio de contexto en la traza | 15 µs | **14 µs** | `ctx_gap_peak_us` sin tracing: **15 µs** |
+| Tick ISR → inicio instrumentado del muestreo | 50 µs | **73 µs** | `lat_peak_us` sin tracing: **12 µs** |
+| Carga por hilo en operación normal | — | `sampling_tid`: **56 %**; `console_tid`: **13 %**; `control_tid`: **6 %**; `display_tid`: **0 %**; `idle`: **23 %** | Suma aproximada: **98 %** por redondeo |
+| Sobrecarga sobre el jitter máximo | 10 µs | **36 µs** | Tracing ON: **43 µs**; tracing OFF: **7 µs** |
 
----
+La carga efectiva de CPU, excluyendo `idle`, fue aproximadamente 75 %. Los porcentajes de los hilos suman cerca de 98 % por el redondeo del visor; el porcentaje restante corresponde a interrupciones y eventos internos breves.
 
-## 3.5.8 Contraste entre instrumentos
+La entrada de `sampling_tid` se produjo 61 µs después de `isr_enter`. El valor de 73 µs corresponde al inicio efectivo del trabajo instrumentado, identificado por la elevación de `instr_samp`.
 
-| Instrumento | Qué muestra | Ventaja | Limitación |
-|---|---|---|---|
-| GPIO + analizador lógico | Bordes eléctricos y duración real de pulsos | Muy baja perturbación | No explica qué hilo causó el evento |
-| CTF | Hilos, ISR, ready, blocked, switches y sincronización | Explica la historia del planificador | Introduce carga y usa memoria |
-| `k_cycle_get_32()` | Diferencias internas entre puntos específicos del código | Fácil de automatizar | Depende de dónde se coloquen las marcas |
-| Consola serial | Resultados agregados | Fácil de registrar | Imprimir también puede perturbar |
+#### Rastro anotado de una decisión de preempción
 
-En este laboratorio no se dispuso de un analizador lógico externo. La comparación de tracing activo y desactivado se realizó con los contadores internos del firmware. Los GPIO quedaron instrumentados para una validación externa posterior.
+La siguiente secuencia fue extraída de la captura CTF alrededor de `t = 408,815 ms`.
 
----
+| Tiempo | Evento | Interpretación |
+|---:|---|---|
+| 408,815 ms | `isr_enter` | Entra la interrupción periódica. |
+| 408,827 ms | `thread_sched_ready` → `console_tid` | La consola queda lista, pero todavía no está ejecutándose. |
+| 408,843 ms | `thread_sched_ready` → `sampling_tid` | La ISR libera el trabajo periódico de muestreo. |
+| 408,856 ms | `isr_exit` | Finaliza la interrupción. |
+| 408,866 ms | `thread_switched_out` → `idle` | El procesador abandona `idle`. |
+| 408,876 ms | `thread_switched_in` → `sampling_tid` | El planificador selecciona muestreo por encima de la consola lista. |
+| 408,888 ms | `gpio_port_set_bits_raw_enter` | Se eleva `instr_samp`; comienza el trabajo de muestreo. |
+| 408,931 ms | `semaphore_give_enter` | Muestreo libera el semáforo de control. |
+| 408,940 ms | `thread_sched_ready` → `control_tid` | Control queda listo. |
+| 408,948 ms | `semaphore_give_exit` | Termina la liberación del semáforo. |
+| 408,961 ms | `thread_sched_pend` → `sampling_tid` | Muestreo termina su activación y queda pendiente. |
+| 408,974 ms | `thread_switched_out` → `sampling_tid` | Muestreo abandona la CPU. |
+| 408,988 ms | `thread_switched_in` → `control_tid` | El procesador pasa a control. |
+| 408,996 ms | `semaphore_take_exit` | Control recibe el semáforo. |
+| 409,004 ms | `gpio_port_set_bits_raw_enter` | Comienza el trabajo instrumentado de control. |
+| 409,031 ms | `semaphore_take_enter` | Control espera la siguiente liberación. |
+| 409,038 ms | `semaphore_take_blocking` | El semáforo no está disponible y control se bloquea. |
+| 409,050 ms | `thread_sched_pend` → `control_tid` | El planificador retira control. |
+| 409,064 ms | `thread_switched_out` → `control_tid` | Finaliza la ejecución de control. |
+| 409,077 ms | `thread_switched_in` → `console_tid` | La CPU se entrega finalmente a la consola. |
 
-## 3.5.9 Evidencias seleccionadas
-
-### Evidencia A — Tracing activo y nombres de hilos
-
-La vista Gantt muestra:
-
-```text
-sampling_tid
-idle
-console_tid
-control_tid
-display_tid
-[ISR]
-```
-
-También muestra:
-
-```text
-events = 2761
-threads = 9
-window = 3037.547 ms
-```
-
-### Evidencia B1 — Preempción del muestreo
-
-Secuencia seleccionada:
+La cadena observada fue:
 
 ```text
-815.125 µs  isr_enter
-843.000 µs  sampling_tid ready
-855.500 µs  isr_exit
-866.375 µs  idle switched_out
-876.313 µs  sampling_tid switched_in
-888.313 µs  instr_samp set
-936.375 µs  sampling_tid pend
-948.813 µs  sampling_tid switched_out
-963.188 µs  console_tid switched_in
+ISR
+→ console_tid ready
+→ sampling_tid ready
+→ sampling_tid running
+→ control_tid ready
+→ sampling_tid blocked
+→ control_tid running
+→ control_tid blocked
+→ console_tid running
 ```
 
-### Evidencia B2 — Décimo tick
+La captura muestra directamente una decisión de prioridad: aunque `console_tid` estaba listo, el planificador entregó primero la CPU a `sampling_tid`. Posteriormente, `control_tid` se ejecutó antes de regresar a la consola.
 
-Secuencia seleccionada:
+En el instante inicial de esta ventana el hilo que ejecutaba antes de la ISR era `idle`, no `console_tid`. Por tanto, la captura demuestra la preempción de `idle` y el aplazamiento de una consola lista, pero no una interrupción de `console_tid` mientras esta estaba ejecutándose.
 
-```text
-408.815 ms  isr_enter
-408.843 ms  sampling_tid ready
-408.876 ms  sampling_tid switched_in
-408.931 ms  semaphore_give_enter
-408.940 ms  control_tid ready
-408.974 ms  sampling_tid switched_out
-408.988 ms  control_tid switched_in
-409.038 ms  semaphore_take_blocking
-409.064 ms  control_tid switched_out
-409.077 ms  console_tid switched_in
-```
+![Rastro anotado de la decisión de preempción](evidencias/lab05_tarea_b_preempcion_anotada.png)
 
-### Evidencia C — Tracing activo
+*Figura 2. Rastro CTF anotado con ISR, estados ready, cambios de hilo, ejecución de muestreo, liberación de control y retorno a consola.*
 
-```text
-lat_peak_us=48
-samp_jitter_peak_us=43
-ctrl_period_peak_us=10048
-ctx_gap_peak_us=75
-```
+#### Décimo tick y activación del controlador
 
-### Evidencia C — Tracing desactivado
+En el tick correspondiente a la activación de control se observó:
 
-```text
-lat_peak_us=12
-samp_jitter_peak_us=7
-ctrl_period_peak_us=10005
-ctx_gap_peak_us=15
-```
+| Tiempo | Evento |
+|---:|---|
+| 408,931 ms | `semaphore_give_enter` |
+| 408,940 ms | `control_tid` pasa a estado ready |
+| 408,948 ms | `semaphore_give_exit` |
+| 408,961 ms | `sampling_tid` queda pendiente |
+| 408,988 ms | `control_tid` entra en ejecución |
 
----
+Por tanto, en el décimo tick, `k_sem_give()` hace que `control_tid` quede listo. Después de que `sampling_tid` termina su activación, el planificador selecciona al controlador.
 
-## 3.5.10 Conclusiones del Lab 5
+#### Comparación entre tracing e instrumentación interna
 
-1. Se consiguió una traza CTF válida en el ESP32-C6 Super Mini usando almacenamiento en RAM y extracción por JTAG.
-
-2. La traza identificó directamente los hilos y los cambios de estado del planificador.
-
-3. El tiempo visible entre la salida de idle y la entrada de muestreo fue de 9,938 µs.
-
-4. El tiempo entre la entrada de la ISR y la subida de `instr_samp` fue de 73,188 µs.
-
-5. En el décimo tick, `k_sem_give()` dejó listo al hilo de control, que comenzó a ejecutarse 48 µs después de quedar ready.
-
-6. La captura mostró que el hilo de muestreo vuelve a bloquearse y permite continuar al control o a la consola.
-
-7. El tracing aumentó el jitter máximo de muestreo de 7 µs a 43 µs, con un sobrecosto de 36 µs.
-
-8. CTF explica quién ejecutó y por qué, mientras que GPIO o un analizador lógico son más apropiados para juzgar los tiempos físicos con menor perturbación.
-
-9. La captura en RAM no reproduce el streaming UART de 4 Mbaud del ESP32-S3, pero conserva el objetivo académico de observar el planificador.
-
----
-
-## §4. Análisis de planificabilidad
-
-### 4.1 Utilización de referencia
-
-Para tareas periódicas independientes:
+El cambio de contexto se calculó entre la salida de `sampling_tid` a 408,974 ms y la entrada de `control_tid` a 408,988 ms:
 
 \[
-U = \sum_i \frac{C_i}{T_i}
+C_{ctx}=408,988-408,974
+=0,014\ ms
+=14\ \mu s
 \]
 
-Usando las mediciones iniciales disponibles:
+La latencia entre la entrada de la ISR y la entrada de `sampling_tid` fue:
 
 \[
-U =
-\frac{5,4}{1000}
-+
-\frac{4,0}{10000}
-+
-\frac{2,0}{100000}
+L_{ISR\rightarrow sampling}
+=408,876-408,815
+=0,061\ ms
+=61\ \mu s
 \]
+
+Tomando como inicio efectivo la elevación de `instr_samp`, la latencia fue:
 
 \[
-U = 0,0054 + 0,0004 + 0,00002
+L_{ISR\rightarrow instr\_samp}
+=408,888-408,815
+=0,073\ ms
+=73\ \mu s
 \]
+
+El valor obtenido mediante tracing es mayor que `lat_peak_us=12 µs`, medido con el firmware sin tracing. Esto ocurre porque el tracing registra eventos del kernel, llamadas GPIO y cambios de estado, añadiendo trabajo a la ejecución.
+
+Además, los puntos de medición no representan exactamente el mismo instante. `lat_peak_us` mide la latencia interna definida por el firmware, mientras CTF permite observar la secuencia completa del planificador.
+
+En la ESP32-C6 no se dispuso de una captura externa simultánea mediante analizador lógico. Por ello, la comparación se realiza entre la traza CTF y los contadores internos del firmware. Los datos del Lab 2 obtenidos con Logic 2 pertenecen a la Nucleo-L476RG y no constituyen una medición simultánea del C6.
+
+#### Precio de observar el sistema
+
+| Magnitud | Tracing activado | Tracing desactivado | Incremento |
+|---|---:|---:|---:|
+| `lat_peak_us` | 48 µs | 12 µs | **+36 µs** |
+| `samp_jitter_peak_us` | 43 µs | 7 µs | **+36 µs** |
+| `ctrl_period_peak_us` | 10 048 µs | 10 005 µs | **+43 µs** |
+| `ctx_gap_peak_us` | 75 µs | 15 µs | **+60 µs** |
+
+La sobrecarga máxima sobre el jitter de muestreo fue:
 
 \[
-U = 0,00582
+\Delta J_{max}=43-7=\boxed{36\ \mu s}
 \]
+
+El tracing incrementó el trabajo ejecutado en cada activación y elevó la latencia, el jitter y las brechas observadas. Esto confirma que el tracing permite explicar la historia del planificador, pero también perturba el sistema observado.
+
+![Medición con tracing activado](evidencias/lab05_tracing_on_status.png)
+
+*Figura 3. Resultado con tracing activado: `samp_jitter_peak_us=43`.*
+
+![Medición con tracing desactivado](evidencias/lab05_tracing_off_status.png)
+
+*Figura 4. Resultado con tracing desactivado: `samp_jitter_peak_us=7`.*
+
+#### Alcance del búfer de trazado
+
+El búfer CTF alcanzó aproximadamente `pos=65331` y `buffer_full=true`, frente a una capacidad configurada de 65 536 bytes. Por esta razón, la captura disponible cubrió aproximadamente 3,14 s.
+
+En la configuración original del ESP32-S3 solamente sobreviven cerca de 75 ms de `calib` porque el hilo encargado de drenar el tracing tiene prioridad baja. Cuando la consola ejecuta trabajo intensivo, el tracer puede quedar sin CPU y llenar su búfer.
+
+En esta adaptación al ESP32-C6, la limitación tuvo una causa diferente: los eventos se conservaron directamente en un búfer de RAM que no se transmite durante la ejecución. Cuando los 65 536 bytes se llenan, los eventos posteriores dejan de almacenarse.
+
+#### Conclusiones de la semana 5
+
+- El trazado CTF permitió identificar los hilos y observar directamente las decisiones del planificador.
+
+- El cambio entre la salida de `sampling_tid` y la entrada de `control_tid` tomó 14 µs.
+
+- Desde `isr_enter` hasta el inicio instrumentado del muestreo transcurrieron 73 µs.
+
+- En el décimo tick, `k_sem_give()` dejó listo a `control_tid`, que se ejecutó después de que muestreo terminó su activación.
+
+- El tracing aumentó el jitter máximo de muestreo de 7 µs a 43 µs, para una sobrecarga observada de 36 µs.
+
+- La captura utilizada muestra a la consola lista mientras muestreo y control reciben prioridad. No muestra a la consola ejecutándose justo antes de la ISR; por ello se presenta como una decisión de preempción y prioridad observada, no como una interrupción directa de la ejecución de consola.
+
+- GPIO y los contadores internos son apropiados para medir tiempos con menor perturbación. CTF es apropiado para explicar qué hilo se ejecutó, por qué fue seleccionado y cuándo quedó bloqueado.
+
+## 4. Análisis de planificabilidad
+
+El análisis de planificabilidad se realizará utilizando los tiempos `C_i` medidos y declarando explícitamente el instrumento utilizado para obtener cada uno.
+
+La utilización periódica se calculará mediante:
 
 \[
-U = 0,582\%
+U=\sum_{i=1}^{n}\frac{C_i}{T_i}
 \]
 
-Este cálculo representa solamente los cuerpos instrumentados de las tareas y no incluye:
-
-- ISR.
-- Cambios de contexto.
-- Operaciones de kernel.
-- Consola.
-- Telemetría.
-- Tracing.
-- Accesos a periféricos.
-- Secciones críticas.
-
-### 4.2 Costo del tracing
-
-El Lab 5 demostró que el costo del observador debe incluirse en cualquier análisis experimental.
-
-La métrica más sensible fue:
+Para las tareas con prioridades fijas se aplicará análisis de tiempo de respuesta:
 
 \[
-J_{\text{off}} = 7\ \mu s
+R_i^{(k+1)}
+=
+C_i+B_i+
+\sum_{j\in hp(i)}
+\left\lceil
+\frac{R_i^{(k)}}{T_j}
+\right\rceil C_j
 \]
+
+donde:
+
+- \(C_i\) es el peor tiempo de ejecución medido.
+- \(T_i\) es el período de la tarea.
+- \(B_i\) es el bloqueo producido por recursos compartidos.
+- \(hp(i)\) es el conjunto de tareas con prioridad superior a la tarea \(i\).
+
+El resultado deberá verificar para cada tarea periódica que:
 
 \[
-J_{\text{on}} = 43\ \mu s
+R_i \le D_i
 \]
 
-\[
-\Delta J = 36\ \mu s
-\]
+El cálculo se acompañará con el script utilizado, su salida y la identificación de cualquier tiempo de bloqueo debido a mutexes, semáforos u otros recursos compartidos.
 
-Por tanto, las mediciones utilizadas para un análisis de planificabilidad deben indicar si fueron tomadas con tracing activo o desactivado.
+## 5. Seguridad funcional
 
-### 4.3 Estado actual
+El estado seguro declarado del sistema es:
 
-Los periodos de 1 ms y 10 ms se mantienen dentro de sus plazos en las capturas realizadas. Sin embargo, el análisis formal deberá incorporar:
+> Ante una falla detectada, sobrepresión, parada de emergencia o pérdida de control temporal, la válvula deberá quedar cerrada.
 
-- Peor caso de ejecución de cada hilo.
-- Bloqueos.
-- Interferencia de tareas de mayor prioridad.
-- Costos del kernel.
-- ISR.
-- Tracing, cuando esté habilitado.
-- Acceso a recursos compartidos.
+La evaluación final deberá incluir:
 
----
-
-## §5. Seguridad y comportamiento degradado
-
-### Estado seguro
-
-Ante una condición crítica:
-
-- La válvula debe pasar a un estado seguro.
-- `estop` debe activarse.
-- El control no debe continuar aplicando una salida peligrosa.
-- La telemetría debe informar la condición cuando sea posible.
-
-### Riesgos temporales
-
-| Riesgo | Efecto | Mitigación |
-|---|---|---|
-| Consola prolongada | Retraso de tareas | Prioridad inferior a muestreo y control |
-| Buffer de muestras lleno | Pérdida de muestras | Supervisar backlog y dimensionar la cola |
-| Tracing activo | Incremento de jitter | Usarlo solamente durante diagnóstico |
-| Saturación del buffer CTF | Pérdida de eventos posteriores | Capturas cortas y extracción frecuente |
-| Bloqueo de recurso compartido | Inversión de prioridad | Reducir secciones críticas |
-| Pérdida del sensor | Control incorrecto | Activar estado seguro |
-| JTAG conectado durante operación | Detención del nodo | No utilizarlo durante operación de campo |
-
-### Política de instrumentación
-
-- GPIO y analizador lógico: medición temporal externa.
-- CTF: diagnóstico del planificador.
-- Contadores internos: supervisión automática.
-- Consola: presentación de resultados agregados.
-
-Los instrumentos deben activarse solamente cuando su costo sea aceptable para el escenario de prueba.
-
----
-
-## Estado acumulativo del proyecto
-
-| Laboratorio | Resultado |
-|---|---|
-| Lab 2 | Caracterización inicial del superloop |
-| Lab 3 | Separación del hilo de muestreo |
-| Lab 4 | Arquitectura multihilo, prioridades y métricas internas |
-| Lab 5 | Tracing CTF, preempción, décimo tick, carga de CPU y costo del observador |
-
-El proyecto queda preparado para continuar con el análisis formal de planificabilidad utilizando tanto las mediciones temporales como la historia observada del planificador.
+- Activación y configuración del watchdog.
+- Evidencia de que el watchdog detecta la ausencia de progreso.
+- Transición de la salida de la válvula al estado cerrado.
+- Evidencia temporal del disparo del mecanismo de seguridad.
+- Verificación de REQ-SAFE-01 bajo una condición de falla inducida.
+- Identificación de los estados y recursos que deben recuperarse después del reinicio.
