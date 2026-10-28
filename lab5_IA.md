@@ -1,6 +1,6 @@
 # RET — Informe de Evidencia de Tiempos
 
-**Grupo:** `María Prieto Ortega` `Rafael Torres Choperena` `Mariana Zuluaga Yepes`  ·  **Placa:** `Nucleo-L476RG` - `ESP32-C6 Super Mini`
+**Grupo:** `María Prieto Ortega` `Mariana Zuluaga Yepes`  ·  **Placa:** `Nucleo-L476RG` - `ESP32-C6 Super Mini`
 **Plataforma principal:** ESP32-C6 Super Mini  
 **RTOS:** Zephyr `4.4.99`  
 **Target de compilación:** `esp32c6_devkitc/esp32c6/hpcore`  
