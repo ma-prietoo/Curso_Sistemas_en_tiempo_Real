@@ -36,21 +36,16 @@
 | Lote de flujo | REQ-FLOW-01 | Suave | Cada 100 pulsos | No definido | No medido |
 | Pantalla OLED | REQ-HMI-01 | Suave | 500 ms | 500 ms | No medida en C6 |
 
-### Tareas e Instrumento asociado a los tiempos de ejecución
+### Tareas y tiempos de ejecución en ESP32-C6 (Lab 5) 
 
-A partir de la semana 5, cada tiempo de ejecución `C_i` se presenta acompañado por el instrumento con el cual fue obtenido.
-
-| Tarea | Tiempo de ejecución | Instrumento |
-|---|---:|---|
-| Muestreo (`sampling_tid`) | \(C_{samp}\) | GPIO de instrumentación / contadores internos |
-| Control (`control_tid`) | \(C_{ctrl}\) | GPIO de instrumentación / contadores internos |
-| Consistencia | \(C_{cons}\) | GPIO de instrumentación |
-| Telemetría (`telemetry_tid`) | \(C_{tele}\) | GPIO de instrumentación |
-| Flujo (`flow_wq`) | \(C_{flow}\) | GPIO de instrumentación |
-| Pantalla (`display_tid`) | \(C_{disp}\) | GPIO de instrumentación |
-| Cambio de contexto | \(C_{ctx}=14\ \mu s\) | Traza CTF almacenada en RAM y extraída mediante JTAG/GDB |
-
-Los valores cuantitativos de `C_i` se conservan de las mediciones GPIO o de los contadores internos realizadas en las semanas anteriores. La traza CTF se utiliza para identificar el orden de ejecución, las preempciones y las causas de bloqueo.
+| Tarea | Req. | Prioridad | Periodo/deadline | \(C_i\) máximo medido | Instrumento |
+|---|---|---:|---:|---:|---|
+| `sampling_tid` | REQ-SAMP-01 | 0 | 1 ms / 1 ms | 12 µs | Contador interno `k_cycle_get_32()` |
+| `control_tid` | REQ-CTRL-01 | 1 | 10 ms / 10 ms | 5 µs | Contador interno `k_cycle_get_32()` |
+| `console_tid` | REQ-CONS-01 | 5 | Esporádica | 400030 µs | Contador interno `k_cycle_get_32()` |
+| `telemetry_tid` | REQ-TELE-01 | 4 | 1 s / 1 s | 165 µs | Contador interno `k_cycle_get_32()` |
+| `display_tid` | REQ-DISP-01 | 3 | 200 ms / 200 ms | N/A | No medido |
+| `flow_wq` | REQ-FLOW-01 | 2 | Esporádica | 165 µs | Contador interno `k_cycle_get_32()` |
 
 ## Tareas Laboratorios
 
