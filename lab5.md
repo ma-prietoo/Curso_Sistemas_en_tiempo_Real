@@ -278,7 +278,7 @@ Debido a que la tarjeta dispone de un único puerto USB Serial/JTAG, el trazado 
 
 La captura utilizada para el análisis contiene 2764 eventos, cinco hilos visibles y una ventana temporal de 3136,906 ms. Se identificaron `sampling_tid`, `console_tid`, `control_tid`, `display_tid` e `idle`, además de las interrupciones del sistema.
 
-![Visor CTF con los hilos identificados](evidencias/lab05_tarea_a_hilos_ctf.png)
+![Visor CTF con los hilos identificados](Imageneslab5/lab05_tarea_a_hilos_ctf.png)
 
 *Figura 1. Captura CTF abierta en el visor con los hilos del nodo identificados.*
 
@@ -340,7 +340,7 @@ La captura muestra directamente una decisión de prioridad: aunque `console_tid`
 
 En el instante inicial de esta ventana el hilo que ejecutaba antes de la ISR era `idle`, no `console_tid`. Por tanto, la captura demuestra la preempción de `idle` y el aplazamiento de una consola lista, pero no una interrupción de `console_tid` mientras esta estaba ejecutándose.
 
-![Rastro anotado de la decisión de preempción](evidencias/lab05_tarea_b_preempcion_anotada.png)
+![Rastro anotado de la decisión de preempción](Imageneslab5/lab05_tarea_b_preempcion_anotada.png)
 
 *Figura 2. Rastro CTF anotado con ISR, estados ready, cambios de hilo, ejecución de muestreo, liberación de control y retorno a consola.*
 
@@ -409,11 +409,11 @@ La sobrecarga máxima sobre el jitter de muestreo fue:
 
 El tracing incrementó el trabajo ejecutado en cada activación y elevó la latencia, el jitter y las brechas observadas. Esto confirma que el tracing permite explicar la historia del planificador, pero también perturba el sistema observado.
 
-![Medición con tracing activado](evidencias/lab05_tracing_on_status.png)
+![Medición con tracing activado](Imageneslab5/lab05_tracing_on_status.png)
 
 *Figura 3. Resultado con tracing activado: `samp_jitter_peak_us=43`.*
 
-![Medición con tracing desactivado](evidencias/lab05_tracing_off_status.png)
+![Medición con tracing desactivado](Imageneslab5/lab05_tracing_off_status.png)
 
 *Figura 4. Resultado con tracing desactivado: `samp_jitter_peak_us=7`.*
 
